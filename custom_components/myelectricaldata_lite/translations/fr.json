@@ -36,6 +36,18 @@
       },
       "date_dernier_jour": {
         "name": "Date dernier jour"
+      },
+      "mois_en_cours": {
+        "name": "Mois en cours"
+      },
+      "mois_an_passe": {
+        "name": "Même période du mois l'an passé"
+      },
+      "annee_en_cours": {
+        "name": "Année en cours"
+      },
+      "annee_an_passe": {
+        "name": "Même période de l'année l'an passé"
       }
     }
   }

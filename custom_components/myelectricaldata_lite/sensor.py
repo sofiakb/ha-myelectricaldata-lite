@@ -47,6 +47,34 @@ SENSORS = (
         device_class=SensorDeviceClass.DATE,
         value=lambda d: d.last_day,
     ),
+    MedSensorDescription(
+        key="mois_en_cours",
+        translation_key="mois_en_cours",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value=lambda d: d.month_kwh,
+    ),
+    MedSensorDescription(
+        key="mois_an_passe",
+        translation_key="mois_an_passe",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value=lambda d: d.month_last_year_kwh,
+    ),
+    MedSensorDescription(
+        key="annee_en_cours",
+        translation_key="annee_en_cours",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value=lambda d: d.year_kwh,
+    ),
+    MedSensorDescription(
+        key="annee_an_passe",
+        translation_key="annee_an_passe",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value=lambda d: d.year_last_year_kwh,
+    ),
 )
 
 
