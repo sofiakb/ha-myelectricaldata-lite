@@ -15,7 +15,7 @@ from homeassistant.components.recorder.models import (
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
-    statistic_during_period,
+    statistics_during_period,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy
@@ -75,6 +75,8 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
         )
         self.client = client
         self.usage_points: list[str] = []
+        # Consommation par jour (Wh) gardée en mémoire pour les comparaisons.
+        self._days: dict[str, dict[date, float]] = {}
 
     async def _async_update_data(self) -> dict[str, PdlData]:
         entry = self.config_entry
@@ -128,11 +130,14 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
             total = row["sum"] or 0.0
             start = min(last_day + timedelta(days=1), today - timedelta(days=7))
             days = await self.client.daily_consumption(usage_point_id, start, today)
+            if usage_point_id not in self._days:
+                self._days[usage_point_id] = await self._load_days(stat_id, today)
         else:
             # Réimporte tout avec des sommes repartant de zéro : les lignes existantes
             # sont écrasées, la série reste cohérente.
             last_day, total = None, 0.0
             days = await self._fetch_history(usage_point_id, today)
+            self._days[usage_point_id] = {}
 
         stats = []
         for day in sorted(days):
@@ -156,8 +161,9 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
                 stats,
             )
             _LOGGER.debug("%s : %s jours importés", usage_point_id, len(stats))
-            # Les comparaisons lisent les statistiques : attendre que l'import soit écrit.
-            await recorder.async_block_till_done()
+
+        known = self._days[usage_point_id]
+        known.update(days)
 
         data = PdlData()
         if not days:
@@ -169,28 +175,34 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
         data.last_7_days_kwh = round(sum(week) / 1000, 2)
 
         # Périodes arrêtées au dernier jour connu, comparées aux mêmes dates un an plus tôt.
-        end = newest + timedelta(days=1)
+        def period_kwh(first: date, last: date) -> float | None:
+            values = [v for d, v in known.items() if first <= d <= last]
+            return round(sum(values) / 1000, 1) if values else None
+
         month_start = newest.replace(day=1)
         year_start = newest.replace(month=1, day=1)
-        data.month_kwh = await self._change(stat_id, month_start, end)
-        data.year_kwh = await self._change(stat_id, year_start, end)
-        data.month_last_year_kwh = await self._change(
-            stat_id, _one_year_before(month_start), _one_year_before(end)
-        )
-        data.year_last_year_kwh = await self._change(
-            stat_id, _one_year_before(year_start), _one_year_before(end)
-        )
+        data.month_kwh = period_kwh(month_start, newest)
+        data.year_kwh = period_kwh(year_start, newest)
+        last_year = _one_year_before(newest)
+        data.month_last_year_kwh = period_kwh(_one_year_before(month_start), last_year)
+        data.year_last_year_kwh = period_kwh(_one_year_before(year_start), last_year)
         return data
 
-    async def _change(self, stat_id: str, start: date, end: date) -> float | None:
-        result = await get_instance(self.hass).async_add_executor_job(
-            statistic_during_period,
+    async def _load_days(self, stat_id: str, today: date) -> dict[date, float]:
+        """Relit dans les statistiques les jours déjà importés (lecture seule, sans attendre
+        l'enregistreur, qui ne traite pas sa file pendant le démarrage de HA)."""
+        rows = await get_instance(self.hass).async_add_executor_job(
+            statistics_during_period,
             self.hass,
-            _local_midnight(start),
-            _local_midnight(end),
-            stat_id,
-            {"change"},
+            _local_midnight(_one_year_before(today.replace(month=1, day=1))),
             None,
+            {stat_id},
+            "hour",
+            None,
+            {"state"},
         )
-        change = result.get("change")
-        return None if change is None else round(change, 1)
+        return {
+            dt_util.as_local(dt_util.utc_from_timestamp(row["start"])).date(): row["state"] * 1000
+            for row in rows.get(stat_id, [])
+            if row.get("state") is not None
+        }
