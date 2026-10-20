@@ -1,0 +1,13 @@
+{
+  "domain": "myelectricaldata_lite",
+  "name": "MyElectricalData Lite",
+  "codeowners": ["@sofiakb"],
+  "config_flow": true,
+  "dependencies": ["recorder"],
+  "documentation": "https://github.com/sofiakb/ha-myelectricaldata-lite",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/sofiakb/ha-myelectricaldata-lite/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
