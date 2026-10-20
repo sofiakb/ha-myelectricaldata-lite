@@ -15,5 +15,5 @@ UPDATE_INTERVAL = {KIND_LINKY: timedelta(hours=6), KIND_GAZPAR: timedelta(hours=
 HISTORY_DAYS = 1090
 CHUNK_DAYS = 365
 # À incrémenter pour forcer une reconstruction complète de l'historique.
-HISTORY_VERSION = 2
+HISTORY_VERSION = 3
 CONF_HISTORY_VERSION = "history_version"

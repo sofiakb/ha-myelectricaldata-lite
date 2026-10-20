@@ -113,7 +113,9 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
         return result
 
     async def _fetch_history(self, usage_point_id: str, today: date) -> dict[date, float]:
-        """Tout l'historique disponible, par tranches ; une tranche trop ancienne est ignorée."""
+        """Tout l'historique disponible, par tranches d'un an. Si une tranche échoue (GRDF
+        renvoie une erreur dès que la période dépasse ses données), on la reprend mois par
+        mois en remontant, jusqu'au premier mois vide ou en erreur."""
         days: dict[date, float] = {}
         end = today
         oldest = today - timedelta(days=HISTORY_DAYS)
@@ -126,9 +128,27 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
             except MedError as err:
                 if not days:
                     raise
-                _LOGGER.info("%s : historique arrêté avant %s (%s)", usage_point_id, end, err)
+                _LOGGER.info("%s : tranche %s-%s refusée (%s), reprise par mois",
+                             usage_point_id, start, end, err)
+                days.update(await self._fetch_months(usage_point_id, start, end))
                 break
             end = start
+        return days
+
+    async def _fetch_months(self, usage_point_id: str, start: date, end: date) -> dict[date, float]:
+        days: dict[date, float] = {}
+        while end > start:
+            month_start = max(end - timedelta(days=30), start)
+            try:
+                month = await self.client.daily(usage_point_id, month_start, end)
+            except MedAuthError:
+                raise
+            except MedError:
+                break
+            if not month:
+                break
+            days.update(month)
+            end = month_start
         return days
 
     async def _update_pdl(self, usage_point_id: str, rebuild: bool) -> PdlData:
