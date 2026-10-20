@@ -2,28 +2,45 @@
   "config": {
     "step": {
       "user": {
+        "title": "Quel compteur ?",
+        "menu_options": {
+          "linky": "Électricité : Linky (MyElectricalData)",
+          "gazpar": "Gaz : Gazpar (GRDF)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Identifiants refusés",
+        "description": "Saisis à nouveau tes identifiants.",
+        "data": {
+          "client_secret": "Client Secret",
+          "username": "E-mail",
+          "password": "Mot de passe"
+        }
+      },
+      "linky": {
         "title": "MyElectricalData",
         "description": "Colle le Client Secret de ton compte www.v2.myelectricaldata.fr (Paramètres > API).",
         "data": {
           "client_secret": "Client Secret"
         }
       },
-      "reauth_confirm": {
-        "title": "Nouveau secret MyElectricalData",
-        "description": "Le secret a été refusé. Colle le nouveau Client Secret.",
+      "gazpar": {
+        "title": "GRDF",
+        "description": "Identifiants de ton espace client monespace.grdf.fr.",
         "data": {
-          "client_secret": "Client Secret"
+          "username": "E-mail",
+          "password": "Mot de passe"
         }
       }
     },
     "error": {
-      "invalid_auth": "Secret refusé.",
-      "cannot_connect": "Passerelle injoignable, réessaie plus tard.",
-      "no_pdl": "Aucun compteur actif sur ce compte."
+      "invalid_auth": "Identifiants refusés.",
+      "cannot_connect": "Service injoignable, réessaie plus tard.",
+      "no_pdl": "Aucun compteur sur ce compte."
     },
     "abort": {
       "already_configured": "Ce compteur est déjà configuré.",
-      "reauth_successful": "Secret mis à jour."
+      "reauth_successful": "Identifiants mis à jour."
     }
   },
   "entity": {

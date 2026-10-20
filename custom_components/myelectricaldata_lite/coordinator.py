@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import logging
@@ -25,13 +26,15 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import EnergyConverter
 
-from .api import MedAuthError, MedClient, MedError
+from .api import GrdfClient, MedAuthError, MedClient, MedError
 from .const import (
     CHUNK_DAYS,
     CONF_HISTORY_VERSION,
     DOMAIN,
     HISTORY_DAYS,
     HISTORY_VERSION,
+    KIND_GAZPAR,
+    KIND_LINKY,
     UPDATE_INTERVAL,
 )
 
@@ -51,8 +54,8 @@ class PdlData:
     year_last_year_kwh: float | None = None
 
 
-def statistic_id(usage_point_id: str) -> str:
-    return f"{DOMAIN}:consommation_{usage_point_id}"
+def statistic_id(prefix: str, meter: str) -> str:
+    return f"{DOMAIN}:{prefix}_{meter}"
 
 
 def _local_midnight(day: date) -> datetime:
@@ -69,13 +72,20 @@ def _one_year_before(day: date) -> date:
 class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
     """Un appel par PDL et par mise à jour, sauf reconstruction de l'historique."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client: MedClient) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        client_factory: Callable[[], MedClient | GrdfClient],
+    ) -> None:
+        self._new_client = client_factory
+        self.client = client_factory()
+        kind = KIND_GAZPAR if isinstance(self.client, GrdfClient) else KIND_LINKY
         super().__init__(
-            hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=UPDATE_INTERVAL
+            hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=UPDATE_INTERVAL[kind]
         )
-        self.client = client
         self.usage_points: list[str] = []
-        # Consommation par jour (Wh) gardée en mémoire pour les comparaisons.
+        # Consommation par jour (kWh) gardée en mémoire pour les comparaisons.
         self._days: dict[str, dict[date, float]] = {}
 
     async def _async_update_data(self) -> dict[str, PdlData]:
@@ -83,8 +93,7 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
         rebuild = entry.data.get(CONF_HISTORY_VERSION, 1) < HISTORY_VERSION
         try:
             if not self.usage_points:
-                pdls = await self.client.usage_points()
-                self.usage_points = [p["usage_point_id"] for p in pdls]
+                self.usage_points = await self.client.meters()
             result = {}
             for usage_point_id in self.usage_points:
                 result[usage_point_id] = await self._update_pdl(usage_point_id, rebuild)
@@ -92,6 +101,11 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
             raise ConfigEntryAuthFailed(str(err)) from err
         except MedError as err:
             raise UpdateFailed(str(err)) from err
+        finally:
+            if isinstance(self.client, GrdfClient):
+                # Nouvelle connexion GRDF à chaque mise à jour.
+                await self.client.close()
+                self.client = self._new_client()
         if rebuild:
             self.hass.config_entries.async_update_entry(
                 entry, data={**entry.data, CONF_HISTORY_VERSION: HISTORY_VERSION}
@@ -106,7 +120,7 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
         while end > oldest:
             start = max(end - timedelta(days=CHUNK_DAYS), oldest)
             try:
-                days.update(await self.client.daily_consumption(usage_point_id, start, end))
+                days.update(await self.client.daily(usage_point_id, start, end))
             except MedAuthError:
                 raise
             except MedError as err:
@@ -118,7 +132,7 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
         return days
 
     async def _update_pdl(self, usage_point_id: str, rebuild: bool) -> PdlData:
-        stat_id = statistic_id(usage_point_id)
+        stat_id = statistic_id(self.client.stat_prefix, usage_point_id)
         today = dt_util.now().date()
         recorder = get_instance(self.hass)
         last = await recorder.async_add_executor_job(
@@ -129,7 +143,7 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
             last_day = dt_util.as_local(dt_util.utc_from_timestamp(row["start"])).date()
             total = row["sum"] or 0.0
             start = min(last_day + timedelta(days=1), today - timedelta(days=7))
-            days = await self.client.daily_consumption(usage_point_id, start, today)
+            days = await self.client.daily(usage_point_id, start, today)
             if usage_point_id not in self._days:
                 self._days[usage_point_id] = await self._load_days(stat_id, today)
         else:
@@ -143,7 +157,7 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
         for day in sorted(days):
             if last_day is not None and day <= last_day:
                 continue
-            kwh = days[day] / 1000
+            kwh = days[day]
             total += kwh
             stats.append(StatisticData(start=_local_midnight(day), state=kwh, sum=total))
         if stats:
@@ -152,7 +166,7 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
                 StatisticMetaData(
                     mean_type=StatisticMeanType.NONE,
                     has_sum=True,
-                    name=f"Linky {usage_point_id}",
+                    name=f"{self.client.label} {usage_point_id}",
                     source=DOMAIN,
                     statistic_id=stat_id,
                     unit_class=EnergyConverter.UNIT_CLASS,
@@ -170,14 +184,14 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
             return data
         newest = max(days)
         data.last_day = newest
-        data.last_day_kwh = round(days[newest] / 1000, 2)
+        data.last_day_kwh = round(days[newest], 2)
         week = [v for d, v in days.items() if d > newest - timedelta(days=7)]
-        data.last_7_days_kwh = round(sum(week) / 1000, 2)
+        data.last_7_days_kwh = round(sum(week), 2)
 
         # Périodes arrêtées au dernier jour connu, comparées aux mêmes dates un an plus tôt.
         def period_kwh(first: date, last: date) -> float | None:
             values = [v for d, v in known.items() if first <= d <= last]
-            return round(sum(values) / 1000, 1) if values else None
+            return round(sum(values), 1) if values else None
 
         month_start = newest.replace(day=1)
         year_start = newest.replace(month=1, day=1)
@@ -202,7 +216,7 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
             {"state"},
         )
         return {
-            dt_util.as_local(dt_util.utc_from_timestamp(row["start"])).date(): row["state"] * 1000
+            dt_util.as_local(dt_util.utc_from_timestamp(row["start"])).date(): row["state"]
             for row in rows.get(stat_id, [])
             if row.get("state") is not None
         }

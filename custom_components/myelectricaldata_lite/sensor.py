@@ -104,9 +104,9 @@ class MedSensor(CoordinatorEntity[MedCoordinator], SensorEntity):
         self._attr_unique_id = f"{usage_point_id}_{description.key}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, usage_point_id)},
-            name=f"Linky {usage_point_id}",
-            manufacturer="Enedis",
-            model="Linky",
+            name=f"{coordinator.client.label} {usage_point_id}",
+            manufacturer="GRDF" if coordinator.client.label == "Gazpar" else "Enedis",
+            model=coordinator.client.label,
         )
 
     @property
