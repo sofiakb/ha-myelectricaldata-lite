@@ -110,6 +110,11 @@ class MedSensor(CoordinatorEntity[MedCoordinator], SensorEntity):
         )
 
     @property
+    def available(self) -> bool:
+        """Garde la dernière valeur connue quand GRDF ou Enedis ne répond pas."""
+        return bool(self.coordinator.data) and self._pdl in self.coordinator.data
+
+    @property
     def native_value(self) -> object:
         data = self.coordinator.data.get(self._pdl)
         return self.entity_description.value(data) if data else None

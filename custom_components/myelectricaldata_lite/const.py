@@ -11,6 +11,8 @@ KIND_GAZPAR = "gazpar"
 
 # 4 appels par jour et par compteur ; GRDF ne publie qu'une fois par jour.
 UPDATE_INTERVAL = {KIND_LINKY: timedelta(hours=6), KIND_GAZPAR: timedelta(hours=12)}
+# Après un échec (site GRDF en panne, coupure réseau), nouvel essai plus tôt.
+RETRY_INTERVAL = timedelta(minutes=30)
 # Historique importé (les API refusent au-delà de 3 ans), par tranches d'un an.
 HISTORY_DAYS = 1090
 CHUNK_DAYS = 365

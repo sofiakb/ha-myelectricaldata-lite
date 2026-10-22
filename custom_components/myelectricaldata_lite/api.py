@@ -184,4 +184,6 @@ class GrdfClient:
         return days
 
     async def close(self) -> None:
-        await self._session.close()
+        """Oublie la connexion ; la session appartient à Home Assistant, qui la ferme."""
+        self._session.cookie_jar.clear()
+        self._logged_in = False

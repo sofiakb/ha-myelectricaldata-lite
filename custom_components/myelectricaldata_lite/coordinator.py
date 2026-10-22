@@ -35,6 +35,7 @@ from .const import (
     HISTORY_VERSION,
     KIND_GAZPAR,
     KIND_LINKY,
+    RETRY_INTERVAL,
     UPDATE_INTERVAL,
 )
 
@@ -78,11 +79,11 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
         entry: ConfigEntry,
         client_factory: Callable[[], MedClient | GrdfClient],
     ) -> None:
-        self._new_client = client_factory
         self.client = client_factory()
         kind = KIND_GAZPAR if isinstance(self.client, GrdfClient) else KIND_LINKY
+        self._normal_interval = UPDATE_INTERVAL[kind]
         super().__init__(
-            hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=UPDATE_INTERVAL[kind]
+            hass, _LOGGER, config_entry=entry, name=DOMAIN, update_interval=self._normal_interval
         )
         self.usage_points: list[str] = []
         # Consommation par jour (kWh) gardée en mémoire pour les comparaisons.
@@ -100,12 +101,13 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
         except MedAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except MedError as err:
+            self.update_interval = RETRY_INTERVAL
             raise UpdateFailed(str(err)) from err
         finally:
             if isinstance(self.client, GrdfClient):
                 # Nouvelle connexion GRDF à chaque mise à jour.
                 await self.client.close()
-                self.client = self._new_client()
+        self.update_interval = self._normal_interval
         if rebuild:
             self.hass.config_entries.async_update_entry(
                 entry, data={**entry.data, CONF_HISTORY_VERSION: HISTORY_VERSION}

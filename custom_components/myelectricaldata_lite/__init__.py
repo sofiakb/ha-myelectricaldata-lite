@@ -22,7 +22,7 @@ type MedConfigEntry = ConfigEntry[MedCoordinator]
 def client_factory(hass: HomeAssistant, data: dict) -> MedClient | GrdfClient:
     if data.get(CONF_KIND, KIND_LINKY) == KIND_GAZPAR:
         return GrdfClient(
-            async_create_clientsession(hass, auto_cleanup=False),
+            async_create_clientsession(hass),
             data[CONF_USERNAME],
             data[CONF_PASSWORD],
         )
