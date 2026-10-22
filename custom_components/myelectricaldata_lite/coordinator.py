@@ -251,6 +251,12 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
             _LOGGER.warning("%s : courbe de charge indisponible (%s)", usage_point_id, err)
             return
 
+        if not slots:
+            _LOGGER.warning(
+                "%s : courbe de charge vide du %s au %s (collecte non autorisée pour "
+                "MyElectricalData ?)", usage_point_id, first, newest
+            )
+            return
         by_day: dict[date, dict[datetime, float]] = {}
         for start, kwh in slots.items():
             hour = dt_util.as_utc(
@@ -284,6 +290,11 @@ class MedCoordinator(DataUpdateCoordinator[dict[str, PdlData]]):
                 running += kwh
                 stats.append(StatisticData(start=hour, state=kwh, sum=running))
         if not stats:
+            _LOGGER.warning(
+                "%s : courbe de charge reçue (%s points, jours %s) mais aucun jour complet "
+                "à détailler (jours connus %s à %s)", usage_point_id, len(slots),
+                sorted(by_day), min(known), newest
+            )
             return
         async_add_external_statistics(
             self.hass,
