@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 import json
 import re
 from typing import Any
@@ -74,8 +74,34 @@ class MedClient:
                 days[date.fromisoformat(point["d"][:10])] = float(point["v"]) * factor
         return days
 
+    async def load_curve(self, meter: str, start: date, end: date) -> dict[datetime, float]:
+        """Courbe de charge en kWh par intervalle (30 min en général), de start inclus à end
+        exclu. Clés : début de l'intervalle, heure locale sans fuseau, comme Enedis."""
+        data = await self._get(
+            f"/enedis/consumption/detail/batch/{meter}",
+            {"start": start.isoformat(), "end": end.isoformat(), "use_cache": "true"},
+        )
+        slots: dict[datetime, float] = {}
+        for grandeur in (data or {}).get("grandeur", []):
+            if grandeur.get("unite") != "W":
+                continue
+            for point in grandeur.get("points", []):
+                minutes = _pas_minutes(point.get("p", "PT30M"))
+                if minutes:
+                    # Puissance moyenne (W) sur l'intervalle -> énergie (kWh).
+                    slots[datetime.fromisoformat(point["d"])] = float(point["v"]) * minutes / 60000
+        return slots
+
     async def close(self) -> None:
         """Session partagée de HA : rien à fermer."""
+
+
+def _pas_minutes(pas: str) -> int | None:
+    """« PT30M » -> 30, « PT1H » -> 60."""
+    match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?", pas or "")
+    if not match or not any(match.groups()):
+        return None
+    return int(match.group(1) or 0) * 60 + int(match.group(2) or 0)
 
 
 GRDF_START_URL = "https://monespace.grdf.fr/"

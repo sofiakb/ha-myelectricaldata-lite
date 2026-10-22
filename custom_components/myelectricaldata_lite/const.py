@@ -15,6 +15,8 @@ UPDATE_INTERVAL = {KIND_LINKY: timedelta(hours=6), KIND_GAZPAR: timedelta(hours=
 RETRY_INTERVAL = timedelta(minutes=30)
 # Historique importé (les API refusent au-delà de 3 ans), par tranches d'un an.
 HISTORY_DAYS = 1090
+# Détail horaire (courbe de charge) gardé sur les derniers jours ; avant, un total par jour.
+HOURLY_DAYS = 30
 CHUNK_DAYS = 365
 # À incrémenter pour forcer une reconstruction complète de l'historique.
 HISTORY_VERSION = 3
